@@ -1,3 +1,5 @@
+#include "DA7212.h"
+#include <cmath>
 #include "accelerometer_handler.h"
 #include "config.h"
 #include "magic_wand_model_data.h"
@@ -11,48 +13,27 @@
 #include "tensorflow/lite/version.h"
 #include "uLCD_4DGL.h"
 
+DA7212 audio;
 
-int LittleStar[42] = {
-  261, 261, 392, 392, 440, 440, 392,
-  349, 349, 330, 330, 294, 294, 261,
-  392, 392, 349, 349, 330, 330, 294,
-  392, 392, 349, 349, 330, 330, 294,
-  261, 261, 392, 392, 440, 440, 392,
-  349, 349, 330, 330, 294, 294, 261};
-int LSLength[42] = {
-  1, 1, 1, 1, 1, 1, 2,
-  1, 1, 1, 1, 1, 1, 2,
-  1, 1, 1, 1, 1, 1, 2,
-  1, 1, 1, 1, 1, 1, 2,
-  1, 1, 1, 1, 1, 1, 2,
-  1, 1, 1, 1, 1, 1, 2};
+uLCD_4DGL uLCD(D1, D0, D2);
+InterruptIn button(SW2);
+DigitalOut led(LED2);
+DigitalOut led2(LED1);
+DigitalOut led3(LED3);
+Serial pc(USBTX, USBRX);
+Thread t(osPriorityNormal, 120 * 1024 /*120K stack size*/);
 
-int TwoTigers[32] = {
-  262, 294, 330, 262, 262, 294, 330,262,
-  330, 349, 392, 330, 349, 392,
-  393, 440, 393, 349, 330, 262,
-  393, 440, 393, 349, 330, 262,
-  294, 196, 262, 294, 296, 262};
-int TTLength[32] = {
-  1, 1, 1, 1, 1, 1, 1, 1,
-  1, 1, 2, 1, 1, 2,
-  0.5, 0.5, 0.5, 0.5, 1, 1,
-  0.5, 0.5, 0.5, 0.5, 1, 1,
-  1, 1, 2,
-  1, 1, 2};
-
-int SunnyDay[22] = {
-  294, 392, 392, 494, 523, 494, 440,
-  392, 440, 494, 494, 494, 494,
-  440, 494, 440, 392};
-int SDLength[22] = {
-  1, 1, 1, 1, 1, 1, 1,
-  0.5, 0.5, 1, 1, 1, 1,
-  0.5, 0.5, 1, 1};
+void playNote(int freq)
+{
+  int16_t waveform[kAudioTxBufferSize];
+  for(int i = 0; i < kAudioTxBufferSize; i++)
+  {
+    waveform[i] = (int16_t) (sin((double)i * 2. * M_PI/(double) (kAudioSampleFrequency / freq)) * ((1<<16) - 1));
+  }
+  audio.spk.play(waveform, kAudioTxBufferSize);
 }
 
 
-// Return the result of the last prediction
 int PredictGesture(float* output) {
   // How many times the most recent gesture has been matched in a row
   static int continuous_count = 0;
@@ -92,27 +73,149 @@ int PredictGesture(float* output) {
   return this_predict;
 }
 
-uLCD_4DGL uLCD(D1, D0, D2);
-InterruptIn button(SW2);
-DigitalOut led(LED2);
-bool mode_sel;
+int LittleStar[42];
+int LSLength[42];
+
+int TwoTigers[42];
+int TTLength[42];
+
+int SunnyDay[42];
+int SDLength[42];
+
+int songLength[3]  {42, 32, 17};
+int gesture_index;
+
+int mode_sel;
 int func, song;
 char* mode_list[4] = {"forward", "backward", "song select", "Taiko mode"};
 char* song_list[3] = {"Little Star", "Two Tigers", "Sunny Day"};
+int taiko[17] = {
+  1,2,2,1,1,2,1,
+  2,2,1,1,1,1,
+  1,2,1,1
+};
+
+
+
 
 void ISR1(){
     led = !led;
-    mode_sel = !mode_sel;
-    if(func != 0)
-      func = 0;
+    if(mode_sel == 0){
+      mode_sel = 1; //mode select
+      gesture_index = -1;
+    }
+    else if(mode_sel == 1 && func == 2){
+      mode_sel = 2; // select song
+      gesture_index = -1;
+      led = 0;
+      led3 = 0;
+    } 
+    else if(mode_sel == 1 && func == 3){
+      mode_sel = 3; //Taiko mode
+      led = 0;
+      led3 = 0;
+    }
+    else{ //exit from forward/backward
+      mode_sel = 0;
+      led3 = 1;
+      if(func == 0){ //exit from forward/backward
+        song = (song+1) % 3;
+      }
+      else if(func == 1){
+        song = (song+2) % 3;
+      }
+    }
 }
+
+void loadSignal(void)
+{
+  char serialInBuffer[5];
+  led2 = 0;
+  int i = 0;
+  int serialCount = 0;
+  audio.spk.pause();
+  while(i < 91){ // load frequency
+    if(pc.readable())
+    {
+      serialInBuffer[serialCount] = pc.getc();
+      //pc.printf("%c\r\n", serialInBuffer[serialCount]);
+      serialCount++;
+      if(serialCount == 3)
+      {
+        serialInBuffer[serialCount] = '\0';
+        if(i < 42) LittleStar[i] = (int) atof(serialInBuffer);
+        else if(41 < i && i < 74) TwoTigers[i-42] = (int) atof(serialInBuffer);
+        else SunnyDay[i-74] = (int) atof(serialInBuffer);
+        //pc.printf("%d\r\n", LittleStar[i]);
+        serialCount = 0;
+        i++;
+      }
+    }
+  }
+  i = 0;
+  while(i < 91){ // load note length
+    if(pc.readable())
+    {
+      serialInBuffer[serialCount] = pc.getc();
+      //pc.printf("%c\r\n", serialInBuffer[serialCount]);
+      serialCount++;
+      if(serialCount == 1)
+      {
+        serialInBuffer[serialCount] = '\0';
+        if(i < 42) LSLength[i] = (int) atof(serialInBuffer);
+        else if(41 < i && i < 74) TTLength[i-42] = (int) atof(serialInBuffer);
+        else SDLength[i-74] = (int) atof(serialInBuffer);
+        //pc.printf("%d\r\n", LittleStar[i]);
+        serialCount = 0;
+        i++;
+      }
+    }
+  }
+  for(int j = 0; j < 42; j++){
+    pc.printf("%d ", LittleStar[j]);
+  }
+  led2 = 1;
+}
+
+void playMusic(int songName[42], int notelength[42], int songlength, float scale);
+void main_model();
 
 int main(int argc, char* argv[]) {
   led = 1;
-  mode_sel = false;
+  led3 = 1;
+  mode_sel = 0;
   func = 0;
   song = 0;
-  //uLCD.printf("\nHello uLCD World\n");
+  loadSignal();
+  button.rise(&ISR1);
+  t.start(main_model);
+
+}
+
+
+void playMusic(int songName[42], int notelength[42], int songlength, float scale){
+  for(int i = 0; i < songlength && mode_sel == 0; i++)
+  {
+    int length = notelength[i];
+    while(length--)
+    {
+      // the loop below will play the note for the duration of 1s
+      for(int j = 0; j < kAudioSampleFrequency / kAudioTxBufferSize && mode_sel == 0; ++j)
+      {
+        playNote(songName[i]);
+      }
+      
+      if(length < 1 && mode_sel == 0){
+        ThisThread::sleep_for(scale*notelength[i]);
+        audio.spk.pause();
+        wait_us(10000);
+      }
+    }
+  }
+  audio.spk.pause();
+}
+
+void main_model(){
   // Create an area of memory to use for input, output, and intermediate arrays.
   // The size of this will depend on the model you're using, and may need to be
   // determined by experimentation.
@@ -124,7 +227,7 @@ int main(int argc, char* argv[]) {
   bool got_data = false;
 
   // The gesture index of the prediction
-  int gesture_index;
+
 
   // Set up logging.
   static tflite::MicroErrorReporter micro_error_reporter;
@@ -189,10 +292,9 @@ int main(int argc, char* argv[]) {
 
   error_reporter->Report("Set up successful...\n");
 
-button.rise(&ISR1);
-
+  int temp;
   while (true) {
-
+    //pc.printf("%d%d ", func, song);
     // Attempt to read new data from the accelerometer
     got_data = ReadAccelerometer(error_reporter, model_input->data.f,
                                  input_length, should_clear_buffer);
@@ -217,22 +319,29 @@ button.rise(&ISR1);
     // Clear the buffer next time we read data
     should_clear_buffer = gesture_index < label_num;
     if(gesture_index < label_num){
-      error_reporter->Report(config.output_message[gesture_index]);
+      //error_reporter->Report(config.output_message[gesture_index]);
     }
-    while(!mode_sel){
+    while(mode_sel == 0){
+        temp = song;
         uLCD.cls();
         uLCD.printf("\nPlaying: %s\n", song_list[song]);
+        if(song == 0) playMusic(LittleStar, LSLength, songLength[song], 0.25);
+        else if(song == 1) playMusic(TwoTigers, TTLength, songLength[song], 0.125);
+        else if(song == 2) playMusic(SunnyDay, SDLength, songLength[2], 0.125); 
         wait_us(1000000);
         song = (song+1)%3;
     }
-    if(mode_sel){
+    if(mode_sel == 1){ // mode select
+      if(song != temp) song = temp;
+      audio.spk.pause();
+      //pc.printf("%d", func);
       if(gesture_index < label_num){
         uLCD.cls();
-        error_reporter->Report(config.output_message[gesture_index]);
+        //error_reporter->Report(config.output_message[gesture_index]);
         if(gesture_index == 0){
           func = (func+1)%4;
         }
-        else{
+        else if(gesture_index == 1){
           func = (func+3)%4;
         }
         for(int i = 0; i < 4; i++){
@@ -240,11 +349,73 @@ button.rise(&ISR1);
           uLCD.printf("\n%s\n", mode_list[i]);
           if(i == func) uLCD.color(GREEN);
         }
+
+      }
+    }
+    else if(mode_sel == 2){ // song select
+      audio.spk.pause();
+      if(gesture_index < label_num){
+        uLCD.cls();
+        //error_reporter->Report(config.output_message[gesture_index]);
+        if(gesture_index == 0){
+          song = (song+1)%3;
+        }
+        else{
+          song = (song+2)%3;
+        }
+        for(int i = 0; i < 3; i++){
+          if(i ==song) uLCD.color(RED);
+          uLCD.printf("\n%s\n", song_list[i]);
+          if(i == song) uLCD.color(GREEN);
+        }
+      }
+    }
+    else if(mode_sel == 3){
+      float score = 0;
+      uLCD.cls();
+      for(int i = 3; i > 0; i-- ){
+        uLCD.printf("\n%d\n", i);
+        wait_us(1000000);
+        uLCD.cls();
+      }
+      for(int j = 0; j < songLength[2]; j++){
+        uLCD.printf(" %d ", taiko[j]);
+      }
+      for(int i = 0; i < songLength[2]; i++) // Little Star as Taiko mode
+      {
+
+        int length = SDLength[i];
+        accmeter();
+        if(d[2] > 0.9 && taiko[i] == 1) score++;
+        else if(d[0] >0.9 && taiko[i] == 2) score++;
+        else score = score;
+        while(length--)
+        {
+          // the loop below will play the note for the duration of 1s
+          for(int j = 0; j < kAudioSampleFrequency / kAudioTxBufferSize ; ++j)
+          {
+            playNote(SunnyDay[i]);
+          }
+      
+          if(length < 1){
+            ThisThread::sleep_for(0.125*SDLength[i]);
+            audio.spk.pause();
+            wait_us(10000);
+          }
+        }
+      }
+      audio.spk.pause();
+      uLCD.cls();
+      uLCD.printf("\nYour score is: %.1f\n", score/17*100);
+      wait_us(1000000);
+      uLCD.cls();
+      mode_sel = 1;
+      led3 = 1;
+      for(int i = 0; i < 4; i++){
+        if(i == func) uLCD.color(RED);
+        uLCD.printf("\n%s\n", mode_list[i]);
+        if(i == func) uLCD.color(GREEN);
       }
     }
   }
-}
-
-void prediction(){
-  
 }

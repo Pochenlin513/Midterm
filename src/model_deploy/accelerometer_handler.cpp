@@ -124,3 +124,28 @@ bool ReadAccelerometer(tflite::ErrorReporter* error_reporter, float* input,
 
   return true;
 }
+
+float d[3];
+
+void accmeter(){
+  int i = 100;
+  while(i > 0) {
+    FXOS8700CQ_readRegs(FXOS8700Q_OUT_X_MSB, res, 6);
+
+    acc16 = (res[0] << 6) | (res[1] >> 2);
+    if (acc16 > UINT14_MAX/2)
+      acc16 -= UINT14_MAX;
+    d[0] = ((float)acc16) / 4096.0f;
+
+    acc16 = (res[2] << 6) | (res[3] >> 2);
+    if (acc16 > UINT14_MAX/2)
+      acc16 -= UINT14_MAX;
+    d[1] = ((float)acc16) / 4096.0f;
+
+    acc16 = (res[4] << 6) | (res[5] >> 2);
+    if (acc16 > UINT14_MAX/2)
+      acc16 -= UINT14_MAX;
+    d[2] = ((float)acc16) / 4096.0f;
+    i--;
+  }
+}
