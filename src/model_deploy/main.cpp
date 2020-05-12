@@ -138,7 +138,6 @@ void loadSignal(void)
     if(pc.readable())
     {
       serialInBuffer[serialCount] = pc.getc();
-      //pc.printf("%c\r\n", serialInBuffer[serialCount]);
       serialCount++;
       if(serialCount == 3)
       {
@@ -146,7 +145,6 @@ void loadSignal(void)
         if(i < 42) LittleStar[i] = (int) atof(serialInBuffer);
         else if(41 < i && i < 74) TwoTigers[i-42] = (int) atof(serialInBuffer);
         else SunnyDay[i-74] = (int) atof(serialInBuffer);
-        //pc.printf("%d\r\n", LittleStar[i]);
         serialCount = 0;
         i++;
       }
@@ -157,7 +155,6 @@ void loadSignal(void)
     if(pc.readable())
     {
       serialInBuffer[serialCount] = pc.getc();
-      //pc.printf("%c\r\n", serialInBuffer[serialCount]);
       serialCount++;
       if(serialCount == 1)
       {
@@ -165,7 +162,6 @@ void loadSignal(void)
         if(i < 42) LSLength[i] = (int) atof(serialInBuffer);
         else if(41 < i && i < 74) TTLength[i-42] = (int) atof(serialInBuffer);
         else SDLength[i-74] = (int) atof(serialInBuffer);
-        //pc.printf("%d\r\n", LittleStar[i]);
         serialCount = 0;
         i++;
       }
@@ -334,10 +330,9 @@ void main_model(){
     if(mode_sel == 1){ // mode select
       if(song != temp) song = temp;
       audio.spk.pause();
-      //pc.printf("%d", func);
+
       if(gesture_index < label_num){
         uLCD.cls();
-        //error_reporter->Report(config.output_message[gesture_index]);
         if(gesture_index == 0){
           func = (func+1)%4;
         }
@@ -356,7 +351,6 @@ void main_model(){
       audio.spk.pause();
       if(gesture_index < label_num){
         uLCD.cls();
-        //error_reporter->Report(config.output_message[gesture_index]);
         if(gesture_index == 0){
           song = (song+1)%3;
         }
